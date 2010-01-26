@@ -1,0 +1,43 @@
+10
+
+dir
+43
+svn://home.smiler.se/comp/test-suite/quiet
+svn://home.smiler.se/comp
+
+
+
+2008-11-27T07:34:30.764188Z
+42
+bolmar
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+cba7bdc1-423a-0410-a0ab-958f6e6f06d4
+
+lexer
+dir
+
+tree
+dir
+
+semantic
+dir
+
+mips
+dir
+
+parser
+dir
+
