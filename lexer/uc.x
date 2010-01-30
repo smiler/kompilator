@@ -4,11 +4,11 @@ module UCLexer (Token(..), AlexPosn(..), ucLexer) where
 
 %wrapper "monad" -- :-/
 
-$digit = 0-9			-- digits
-$alpha = [a-zA-Z]		-- alphabetic characters
-@iconst = $digit+		-- integer constant
+$digit = 0-9                         -- digits
+$alpha = [a-zA-Z]                    -- alphabetic characters
+@iconst = $digit+                    -- integer constant
 @ident = [\_$alpha][\_$alpha$digit]* -- identifier
-@cp = ([^\*]+|\*[^\/]|\n)+ -- inside block comment
+@cp = ([^\*]+|\*[^\/]|\n)+           -- inside block comment
 
 
 tokens :-
@@ -50,8 +50,8 @@ tokens :-
   \'.\'          { tok (\p e [_,c,_] -> Iconst p e (ord c)) }
   @ident         { tok (\p e s -> Id p e s) }
   @iconst        { tok (\p e s -> Iconst p e (read s::Int)) }
-{
 
+{
 endPos :: AlexPosn -> Int -> AlexPosn
 endPos (AlexPn a l c) len = AlexPn (a+len-1) l (c+len-1)
 
@@ -96,7 +96,7 @@ data Token =
   Return      {pos :: AlexPosn, end :: AlexPosn}                |
   Block       {pos :: AlexPosn, end :: AlexPosn}                |
   Char        {pos :: AlexPosn, end :: AlexPosn}                |
-  Error       {msg :: String} |
+  Error       {msg :: String}                                   |
   EOF
 
 instance Show Token where
@@ -130,7 +130,8 @@ instance Show Token where
   show While     {} = "While     "
   show Return    {} = "Return    "
   show Char      {} = "Char      "
-  show Error     {msg=m}	= m
+  show Error     {msg=m} = m
+  show EOF       {} = "EOF       "
 
 instance Eq Token where
   Id        {} == Id        {} = True
@@ -163,6 +164,7 @@ instance Eq Token where
   While     {} == While     {} = True
   Return    {} == Return    {} = True
   Char      {} == Char      {} = True
+  EOF       {} == EOF       {} = True
   _ == _ = False
   a /= b = not (a == b)
 
@@ -187,8 +189,8 @@ ucScan = do
   case alexScan inp sc of
     AlexEOF -> case sc of
       0 -> ucEOF
-      _ -> error $ "parse error on EOF with open block comment at line "
-                   ++ show l ++ ", col " ++ show c
+      _ -> error $ "parse error on EOF with open block comment at line " ++
+                   show l ++ ", col " ++ show c
     AlexError inp'@(AlexPn a l c,chr,s:ss) -> do
       alexSetInput (AlexPn (a+1) l (c+1), s, ss)
       ucError $ "parse error on input " ++ show s
@@ -203,16 +205,19 @@ ucScan = do
 
 -- recursive modified version of runAlex
 ucLexer :: String -> [Token]
-ucLexer input = ucLexer' input ucScan where
-  ucLexer' input (Alex f) = go f (AlexState {alex_pos=alexStartPos,
-                                              alex_inp = input,
-                                              alex_chr = '\n',
-                                              alex_scd = 0})
-    where go f s = 
-           case f s of
---        Right (s', Error{}) -> go f s'         -- filter errors
---        Right (s', Error{msg=m}) -> error m    -- die on error
-              Right (s', e@Error{}) -> e : go f s'   -- let errors through
-              Right (s', EOF) -> []			       -- guess what :O
-              Right (s', a) -> a : go f s' 	       -- lexed a token, continue
+ucLexer input
+  = ucLexer' input ucScan
+  where
+    ucLexer' input (Alex f)
+      = go f (AlexState {alex_pos=alexStartPos,
+                         alex_inp = input,
+                         alex_chr = '\n',
+                         alex_scd = 0})
+      where go f s
+        = case f s of
+--        Right (s', Error{}) -> go f s'             -- filter errors
+--        Right (s', Error{msg=m}) -> error m        -- die on error
+              Right (s', e@Error{}) -> e : go f s' -- let errors through
+              Right (s', EOF) -> [EOF]             -- guess what :O
+              Right (s', a) -> a : go f s'         -- lexed a token, continue
 }
