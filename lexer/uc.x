@@ -213,11 +213,12 @@ ucLexer input
                          alex_inp = input,
                          alex_chr = '\n',
                          alex_scd = 0})
-      where go f s
-        = case f s of
---        Right (s', Error{}) -> go f s'             -- filter errors
---        Right (s', Error{msg=m}) -> error m        -- die on error
-              Right (s', e@Error{}) -> e : go f s' -- let errors through
-              Right (s', EOF) -> [EOF]             -- guess what :O
-              Right (s', a) -> a : go f s'         -- lexed a token, continue
+      where
+        go f s
+          = case f s of
+--                Right (s', Error{}) -> go f s'       -- filter errors
+--                Right (s', Error{msg=m}) -> error m  -- die on error
+                Right (s', e@Error{}) -> e : go f s' -- let errors through
+                Right (s', EOF) -> [EOF]             -- guess what :O
+                Right (s', a) -> a : go f s'         -- lexed token, continue
 }
