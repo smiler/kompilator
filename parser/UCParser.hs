@@ -3,18 +3,7 @@ module UCParser (Vardec(..),Topdec(..),ucParser) where
 import UCLexer -- type Token, ucLexer, show
 import Text.ParserCombinators.Parsec
 import Text.Parsec.Pos
-{-
-tok :: Token -> GenParser Token st Token
-tok x
-	= tokenPrim show nextPos testToken
-	where
-		show t = show t
-		nextPos pos t toks = pos
-		testToken t@(Id p e s) = if(t == x) then Just t else Nothing
-		testToken t@(Iconst p e v) = Just t
-		testToken t@( n p e) = if (n ==(name x)) then Just t else Nothing
-		testToken _ = Nothing
--}
+
 posToken Id        {pos=(AlexPn _ l c)} = newPos "stdin" l c
 posToken Iconst    {pos=(AlexPn _ l c)} = newPos "stdin" l c
 posToken Semicolon {pos=(AlexPn _ l c)} = newPos "stdin" l c
@@ -52,44 +41,79 @@ data Type
   = INT
   | CHAR
   | VOID
-
+  deriving Show
+{-
+instance Show Type where
+  show INT  = "int"
+  show CHAR = "char"
+  show VOID = "void"
+-}
 type MaybeInt = Maybe Int
-
 data Vardec
   = SCALARDEC Type String
   | ARRAYDEC  Type String MaybeInt
-
-type MaybeStmt = Maybe Stmt
+instance Show Vardec where
+  show (SCALARDEC t s) = show t ++ " " ++ show s
+  show (ARRAYDEC t s Nothing) = show t ++ " " ++ show s ++ "[]"
+  show (ARRAYDEC t s (Just i)) = show t ++ " " ++ show s ++ "[" ++ show i ++ "]"
 
 data Binop
   = ADD | SUB | MUL | DIV
   | LT | LE | EQ | NE | GE | GT
-  | ANDALSO
+  | AND
+instance Show Binop where
+  show ADD = "+"
+  show SUB = "-"
+  show MUL = "*"
+  show DIV = "/"
+  show UCParser.LT  = "<"
+  show LE  = "<="
+  show UCParser.EQ  = "="
+  show NE  = "!="
+  show GE  = ">="
+  show UCParser.GT  = ">"
+  show AND = "&&"
 
 data Unop
   = NEG | NOT
+instance Show Unop where
+  show NEG = "-"
+  show NOT = "!"
 
 data Expr
   = CONST   Int
   | VAR     String
-  | ARRAY   String Int
+  | ARRAY   String Expr
   | ASSIGN  Expr Expr
   | UNARY   Unop Expr
   | BINARY  Binop Expr Expr
   | FUNCALL String [Expr]
-
+  deriving Show
+{-
+instance Show Expr where
+  show CONST i = show i
+  show VAR id = show id
+  show ARRAY id e = show id ++ "[" ++ show e ++ "]" 
+  show ASSIGN lhs rhs = show rhs ++ "=" ++ show lhs
+  show UNARY op rhs = show op ++ show rhs
+  show BINARY op lhs rhs = show lhs ++ show op ++ show rhs
+  show FUNCALL id  = show i
+-}
+type MaybeExpr = Maybe Expr
 data Stmt
   = EMPTY
   | EXPR   Expr
   | IF     Expr Stmt Stmt
   | WHILE  Expr Stmt
-  | RETURN MaybeStmt
+  | RETURN MaybeExpr
   | BLOCK  [Stmt]
+  deriving Show
 
 data Topdec
-  = FUNDEC Type String [Vardec] [Vardec] Stmt
+  = FUNDEC Type String [Vardec] [Vardec] [Stmt]
   | EXTERN Type String [Vardec]
   | GLOBAL Vardec
+  deriving Show
 
 type Program
   = [Topdec]
@@ -103,75 +127,145 @@ scan tok
 
 -- Grammar --
 program
-  = many topdec
+  = before (many topdec) (scan EOF)
 
 before f g = f >>= \v -> g >>= \_ -> return v
-
+--before f g = do{v <- f; g; return v}
 topdec
---  = vardec >>= \v -> scan Semicolon{} >>= \_ -> return v
--- = before vardec (scan Semicolon{})
-  = do{ v <- try vardec ;
-        return (GLOBAL v) }
-  <|> do{ ft <- funtype ; id <- ident ;
-      scan Lparen{} ; args <- formals ; scan Rparen{} ;
-      body <- funbody ;
-      case body of Just (l, b) -> return (FUNDEC ft id args l b)
-                   Nothing -> return (EXTERN ft id args) }
+  = do{ t <- funtype ; id <- ident ; topdec' t id }
 
+topdec' t id
+  = do{ glob <- vardec' t id ; return (GLOBAL glob) }
+  <|> do{ args <- between (scan Lparen{}) (scan Rparen{}) formals ;
+          fundec t id args }
+       
 vardec
-  = try $ before scalardec (scan Semicolon{})
-  <|> before arraydec (scan Semicolon{})
+  = do{ t <- typename ; id <- ident ; vardec' t id }
 
-scalardec
-  = do{ t <- typename ; id <- ident ; return (SCALARDEC t id) }
+vardec' t id
+  = scalardec t id
+  <|> do{ size <- between (scan Lbrack{}) (scan Rbrack{}) intconst ; scan Semicolon{} ;
+          return (ARRAYDEC t id (Just size)) }
 
-arraydec
-  = do{ t <- typename ; id <- ident ;
-      scan Lbrack{} ; size <- intconst ; scan Rbrack{} ;
-      return (ARRAYDEC t id (Just size)) }
+scalardec t id
+  = do{ scan Semicolon{} ; return (SCALARDEC t id) }
+  
 
---typename
---  = 
 typename
-  = mytoken (\t -> case t of
-                      Int{} -> Just INT
-                      Char{} -> Just CHAR
-                      other -> Nothing)
+  = do{ scan Int{} ; return INT }
+  <|> do{ scan Char{} ; return CHAR } <?> "type"
+
 funtype
-  = typename <|> mytoken (\t -> case t of Void{} -> Just VOID
-                                          other -> Nothing)
-funbody
-  = do{ scan Lbrace{} ; l <- locals ; s <- stmts ; scan Rbrace{} ;
-        return (Just (l, BLOCK s))}
-  <|> do{ scan Semicolon{} ; return Nothing }
+  = typename 
+  <|> do{ scan Void{} ; return VOID } <?> "type"
+
+fundec t id args
+  = do{ scan Semicolon{} ; return (EXTERN t id args) }
+  <|> do{ scan Lbrace{} ;
+          l <- (many vardec) ; 
+          s <- (many stmt) ;
+          scan Rbrace{} ;
+          return (FUNDEC t id args l s) }
 
 formals
   = do{ scan Void{} ; return [] }
-  <|> sepBy1 formaldec (scan Comma{})
+  <|> sepBy1 formaldec (scan Comma{}) <?> "function parameters"
 
 formaldec
-  = try scalardec
-  <|> do{ t <- typename ; id <- ident ; scan Lbrack{} ; scan Rbrack{} ;
+  = do{ t <- typename ; id <- ident ; formaldec' t id }
+
+formaldec' t id
+  =  do{ scan Lbrack{} ; scan Rbrack{} ;
           return (ARRAYDEC t id Nothing) }
-
-locals
-  = sepEndBy vardec (scan Semicolon{})
-
-stmts
-  = sepEndBy stmt (scan Semicolon{})
+  <|> do{ return (SCALARDEC t id) }
 
 stmt
-  = mytoken (\_ -> Just EMPTY)
+  =   do{ scan Semicolon{} ;
+          return (EMPTY) }
+  <|> do{ scan Return{} ; retur }
+  <|> do{ scan If{}; exp <- between (scan Lparen{}) (scan Rparen{}) expr ;
+          s1 <- stmt ; s2 <- else_part ;
+          return (IF exp s1 s2) }
+  <|> do{ scan While{} ; e <- between (scan Lparen{}) (scan Rparen{}) expr ;
+          s <- stmt ;
+          return (WHILE e s) }
+  <|> do{ ss <- between (scan Lbrace{}) (scan Rbrace{}) (many stmt) ;
+          return (BLOCK ss) }
+  <|> do{ e <- expr ; scan Semicolon{} ;
+          return (EXPR e) } <?> "statement"
+
+else_part
+  = do{ scan Else{} ; stmt }
+  <|> return EMPTY
+
+retur
+  = do{ scan Semicolon{} ;
+        return (RETURN Nothing) }
+  <|> do{ s <- expr ; scan Semicolon{} ;
+          return (RETURN (Just s)) }
+
+expr
+  =  chainr1 expr1 assign <?> "expression"
+
+assign
+  = do{ scan Assign{} ; return ASSIGN }
+
+expr1
+  = chainl1 expr2 (before (return (BINARY AND)) (scan And{}))
+
+expr2
+  = chainl1 expr3 eqop
+
+eqop
+ = do{ scan Eq{} ; return (BINARY UCParser.EQ) }
+ <|> do{ scan Neq{} ; return (BINARY NE) }
+
+expr3
+  = chainl1 expr4 relop
+
+relop
+  = do{ scan Lt{} ; return (BINARY UCParser.LT) }
+  <|> do{ scan Le{} ; return (BINARY LE) }
+  <|> do{ scan Ge{} ; return (BINARY GE) }
+  <|> do{ scan Gt{} ; return (BINARY UCParser.GT) }
+
+expr4
+  = chainl1 expr5 addop
+addop
+  = do{ scan Plus{} ; return (BINARY ADD) }
+  <|> do{ scan Minus{} ; return (BINARY SUB) }
+
+expr5
+  = chainl1 expr6 multop
+
+multop
+  = do{ scan Times{} ; return (BINARY MUL) }
+  <|> do{ scan Divide{} ; return (BINARY DIV) }
+
+expr6
+  = do{ scan Minus{} ; e <- expr6 ; return (UNARY NEG e) }
+  <|> do{ scan Not{} ; e <- expr6 ; return (UNARY NOT e) }
+  <|> expr7
+
+expr7
+  = do{ i <- intconst ; return (CONST i) }
+  <|> do{ id <- ident ; vararrfun id}
+  <|> between (scan Lparen{}) (scan Rparen{}) expr
+
+vararrfun id
+  = do{ e <- between (scan Lbrack{}) (scan Rbrack{}) expr ;
+          return (ARRAY id e) }
+  <|> do{ args <- between (scan Lparen{}) (scan Rparen{}) (sepBy expr (scan Comma{})) ;
+          return (FUNCALL id args) }
+  <|> return (VAR id)
 
 intconst
   = mytoken (\t -> case t of Iconst{val=v} -> Just v
-                             other -> Nothing)
---  = mytoken (val >>= (\_ -> Just))
---  = mytoken (>>= (Just . val))
+                             other -> Nothing) <?> "constant"
 
 ident
   = mytoken (\t -> case t of Id{str=s} -> Just s
-                             other -> Nothing)
+                             other -> Nothing) <?> "identifier"
 
 run input
   = do case runParser program () "" (ucLexer input) of
