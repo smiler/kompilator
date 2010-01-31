@@ -1,6 +1,7 @@
 module UCParser (Vardec(..),Topdec(..),ucParser) where
 
 import UCLexer -- type Token, ucLexer, show
+import UCParserAST
 import Text.ParserCombinators.Parsec
 import Text.Parsec.Pos
 
@@ -37,86 +38,6 @@ posToken Char      {pos=(AlexPn _ l c)} = newPos "stdin" l c
 posToken _ = newPos "fail" 0 0
 --posToken Error     {pos=(AlexPn c _ l)} = newPos "stdin" l c
 
-data Type
-  = INT
-  | CHAR
-  | VOID
-  deriving Show
-{-
-instance Show Type where
-  show INT  = "int"
-  show CHAR = "char"
-  show VOID = "void"
--}
-type MaybeInt = Maybe Int
-data Vardec
-  = SCALARDEC Type String
-  | ARRAYDEC  Type String MaybeInt
-instance Show Vardec where
-  show (SCALARDEC t s) = show t ++ " " ++ show s
-  show (ARRAYDEC t s Nothing) = show t ++ " " ++ show s ++ "[]"
-  show (ARRAYDEC t s (Just i)) = show t ++ " " ++ show s ++ "[" ++ show i ++ "]"
-
-data Binop
-  = ADD | SUB | MUL | DIV
-  | LT | LE | EQ | NE | GE | GT
-  | AND
-instance Show Binop where
-  show ADD = "+"
-  show SUB = "-"
-  show MUL = "*"
-  show DIV = "/"
-  show UCParser.LT  = "<"
-  show LE  = "<="
-  show UCParser.EQ  = "="
-  show NE  = "!="
-  show GE  = ">="
-  show UCParser.GT  = ">"
-  show AND = "&&"
-
-data Unop
-  = NEG | NOT
-instance Show Unop where
-  show NEG = "-"
-  show NOT = "!"
-
-data Expr
-  = CONST   Int
-  | VAR     String
-  | ARRAY   String Expr
-  | ASSIGN  Expr Expr
-  | UNARY   Unop Expr
-  | BINARY  Binop Expr Expr
-  | FUNCALL String [Expr]
-  deriving Show
-{-
-instance Show Expr where
-  show CONST i = show i
-  show VAR id = show id
-  show ARRAY id e = show id ++ "[" ++ show e ++ "]" 
-  show ASSIGN lhs rhs = show rhs ++ "=" ++ show lhs
-  show UNARY op rhs = show op ++ show rhs
-  show BINARY op lhs rhs = show lhs ++ show op ++ show rhs
-  show FUNCALL id  = show i
--}
-type MaybeExpr = Maybe Expr
-data Stmt
-  = EMPTY
-  | EXPR   Expr
-  | IF     Expr Stmt Stmt
-  | WHILE  Expr Stmt
-  | RETURN MaybeExpr
-  | BLOCK  [Stmt]
-  deriving Show
-
-data Topdec
-  = FUNDEC Type String [Vardec] [Vardec] [Stmt]
-  | EXTERN Type String [Vardec]
-  | GLOBAL Vardec
-  deriving Show
-
-type Program
-  = [Topdec]
 
 mytoken :: (Token -> Maybe a) -> GenParser Token () a
 mytoken f
@@ -217,17 +138,17 @@ expr2
   = chainl1 expr3 eqop
 
 eqop
- = do{ scan Eq{} ; return (BINARY UCParser.EQ) }
+ = do{ scan Eq{} ; return (BINARY UCParserAST.EQ) }
  <|> do{ scan Neq{} ; return (BINARY NE) }
 
 expr3
   = chainl1 expr4 relop
 
 relop
-  = do{ scan Lt{} ; return (BINARY UCParser.LT) }
+  = do{ scan Lt{} ; return (BINARY UCParserAST.LT) }
   <|> do{ scan Le{} ; return (BINARY LE) }
   <|> do{ scan Ge{} ; return (BINARY GE) }
-  <|> do{ scan Gt{} ; return (BINARY UCParser.GT) }
+  <|> do{ scan Gt{} ; return (BINARY UCParserAST.GT) }
 
 expr4
   = chainl1 expr5 addop
