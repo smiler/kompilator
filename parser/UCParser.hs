@@ -116,8 +116,9 @@ stmt
           return (EXPR e) } <?> "statement"
 
 else_part
-  = do{ scan Else{} ; stmt }
-  <|> return EMPTY
+  = do{ scan Else{} ; s <- stmt ;
+        return (Just s) }
+  <|> return Nothing
 
 retur
   = do{ scan Semicolon{} ;
