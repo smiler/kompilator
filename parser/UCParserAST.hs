@@ -64,10 +64,11 @@ instance Show Expr where
   show FUNCALL id  = show i
 -}
 type MaybeExpr = Maybe Expr
+type MaybeStmt = Maybe Stmt
 data Stmt
   = EMPTY
   | EXPR   Expr
-  | IF     Expr Stmt Stmt
+  | IF     Expr Stmt MaybeStmt
   | WHILE  Expr Stmt
   | RETURN MaybeExpr
   | BLOCK  [Stmt]
