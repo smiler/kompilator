@@ -5,7 +5,7 @@ data Type
   = INT
   | CHAR
   | VOID
-  deriving Show
+  deriving (Show, Eq)
 {-
 instance Show Type where
   show INT  = "int"
