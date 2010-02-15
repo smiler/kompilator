@@ -53,6 +53,8 @@ instance Show Expr where
   show UNARY (LOAD ty) src = "load" ++ show ty ++ show src
   show BINARY bop src1 src2 = show bop ++ " " ++ show src1 ++ " " ++ show src2
 
+type MaybeTemp = Maybe Temp
+
 data Insn
   -- control flow 
   = LABDEF Label
