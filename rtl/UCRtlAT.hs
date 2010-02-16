@@ -1,5 +1,4 @@
-module UCRtl where
-
+module UCRtlAT (Program(..)) where
 
 data Ty	 -- for memory load/store operations
   = BYTE -- char 
@@ -28,6 +27,8 @@ instance Show Relop where
 
 data Unop
   = LOAD Ty	-- load value of type 'ty' from address in operand 
+instance Show Unop where
+  show LOAD ty = "load" ++ show ty
 
 data Binop
   = ADD | SUB | MUL | DIV
@@ -50,7 +51,7 @@ instance Show Expr where
   show TEMP t = show t
   show ICON i = show i
   show LABREF l = show l
-  show UNARY (LOAD ty) src = "load" ++ show ty ++ show src
+  show UNARY op src = show op ++ " " ++ show src
   show BINARY bop src1 src2 = show bop ++ " " ++ show src1 ++ " " ++ show src2
 
 type MaybeTemp = Maybe Temp
@@ -98,7 +99,8 @@ instance Show Dec where
 
 data Program
   = PROGRAM [Dec]
-
+instance Show Program where
+  show PROGRAM ds = unwords $ map show ds
 --newLabel :: a -> Label
 --newTemp :: a -> Temp
 
