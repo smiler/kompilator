@@ -1,37 +1,51 @@
 module UCRtl where
 
 import UCParserAST as AST
-import UCRtlAT as ABS
-import Control.Monad.State as ST
+import UCRtlAT as RTL hiding (label)
+import Control.Monad.State
 import Prelude hiding (init, LT, GT, EQ)
 
 --type RTL = State RTLState Program
-data RTLState = RTLState { fp :: Int, rv :: Int,
-                           temp :: Int, label :: Int }
+data RTLState = RTLState { temp :: Int, label :: Int }
 
-type RTL = State RTLState
---globalState :: STRef RTLState
---globalState = newSTRef (newIORef init)
+--instance Monad (State RTLState)
+
+--type RTLState = State (Int, Int)
+--newtype RTLState = State { temp :: Int, label :: Int }
 
 init :: RTLState
-init = RTLState 0 1 1 99
+init = RTLState 1 99
 
-makeLabel = "L100"
+newLabel :: RTLState -> (RTLState, String)
+newLabel st =
+  let l = succ $ label st
+  in (RTLState (temp st) l, "L" ++ show l)
 
-parse :: [AST.Topdec] -> RTL ABS.Program
---parse (AST.FUNDEC t id args decs body:tds) = do
---  st <- get
---parse (AST.EXTERN t id args:tds) = do
---  st <- get
-parse (AST.GLOBAL (AST.SCALARDEC t id):tds) = do
-  st <- get
-  l <- makeLabel
-  return (DATA l (case t of CHAR -> sizeof BYTE ; INT -> sizeof LONG))
---parse (AST.GLOBAL (AST.ARRAYDEC t id _):tds) = do
---  st <- get
+newTemp :: RTLState -> (RTLState, Int)
+newTemp st =
+  let t = succ $ temp st
+  in (RTLState t (label st), t)
+
+topLevel :: RTLState -> [AST.Topdec] -> [RTL.Dec]
+topLevel st [] = []
+topLevel st (AST.FUNDEC t id args decs body : tds) =
+  topLevel st tds
+topLevel st (AST.EXTERN t id args : tds) =
+  topLevel st tds
+topLevel st (AST.GLOBAL (AST.SCALARDEC t id) : tds) =
+  let (st', l) = newLabel st
+      dec = DATA l (case t of 
+                      CHAR -> sizeof BYTE
+                      INT -> sizeof LONG)
+  in dec : topLevel st' tds
+topLevel st (AST.GLOBAL (AST.ARRAYDEC t id (Just s)) : tds) =
+  let (st', l) = newLabel st
+      dec = DATA l (case t of
+                      CHAR -> s * sizeof BYTE
+                      INT -> s * sizeof LONG)
+  in dec : topLevel st' tds
 
 
-runRTL :: RTL ABS.Program
-runRTL = do
-  st <- init
-  evalState st parse
+parse :: AST.Program -> RTL.Program
+parse tree =
+  PROGRAM (topLevel init tree)
