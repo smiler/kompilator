@@ -98,7 +98,7 @@ instance Show Dec where
               ")\n\t(locals " ++ (unwords $ map show (locals p)) ++
               ")\n\t(frameSize " ++ show (frameSize p) ++ ")\n" ++
               (unwords $ map show (insns p)) ++ ")\n"
-  show d@(DATA{}) = "\n(data " ++ show (label d) ++ " " ++ show (size d) ++ "\n"
+  show d@(DATA{}) = "\n(data " ++ show (label d) ++ " " ++ show (size d) ++ ")\n"
 
 data Program
   = PROGRAM [Dec]
