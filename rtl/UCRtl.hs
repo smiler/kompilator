@@ -6,9 +6,13 @@ import Control.Monad.State
 import Prelude hiding (init, LT, GT, EQ)
 
 data Symbol
-  = FUN { name :: String, ty :: AST.Type }
+  = FUN  { name :: String, ty :: AST.Type }
   | GLOB { name :: String, ty :: AST.Type }
-  | LOC { name :: String, ty :: AST.Type, temp :: Temp }
+  | LOC  { name :: String, ty :: AST.Type, temp :: Temp }
+  -- arrays?
+instance Eq Symbol where
+  s == s' = (name s) == (name s')
+  s /= s' = not (s == s')
 
 data RTLState
   = RTLState { tempcount :: Temp,
@@ -36,11 +40,11 @@ addSym sym = modify (\st -> RTLState (tempcount st)
                                      (labelcount st)
                                      (addSym' (syms st)))
   where addSym' [] = [[sym]]
-        addSym' (ss'@(s':_):ss's) =
-          if (name sym == (name s')) then
-            (sym : ss') : ss's
-          else
-            ss' : addSym' ss's
+        addSym' ss =
+          map (\symbols -> if (sym == head symbols)
+                  then sym : symbols
+                  else symbols)
+              ss
 
 init :: RTLState
 init = RTLState (Temp 1) 99 []
@@ -91,6 +95,6 @@ funTime (AST.EXPR e) = return []
 funTime (AST.IF e s1 Nothing) = return []
 funTime (AST.IF e s1 (Just s2)) = return []
 funTime (AST.WHILE e s1) = return []
-funTime (AST.RETURN Nothing) = return []
-funTime (AST.RETURN (Just e)) = return []
+funTime (AST.RETURN Nothing) = return [JUMP ""]
+funTime (AST.RETURN (Just e)) = return [JUMP ""]
 funTime (AST.BLOCK stmts) = liftM join $ mapM funTime stmts
