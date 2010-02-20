@@ -1,9 +1,9 @@
 CC	= ghc
 BINARY	= rtl
 
-all: rtl
+all: rtlol
 
-rtl: 
+rtlol: 
 	$(CC) --make -o $(BINARY) -fno-warn-missing-fields Main.hs -i../parser -i../lexer
 
 clean: 
