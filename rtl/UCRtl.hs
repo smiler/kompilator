@@ -1,51 +1,96 @@
 module UCRtl where
 
 import UCParserAST as AST
-import UCRtlAT as RTL hiding (label)
+import UCRtlAT as RTL
 import Control.Monad.State
 import Prelude hiding (init, LT, GT, EQ)
 
---type RTL = State RTLState Program
-data RTLState = RTLState { temp :: Int, label :: Int }
+data Symbol
+  = FUN { name :: String, ty :: AST.Type }
+  | GLOB { name :: String, ty :: AST.Type }
+  | LOC { name :: String, ty :: AST.Type, temp :: Temp }
 
---instance Monad (State RTLState)
+data RTLState
+  = RTLState { tempcount :: Temp,
+               labelcount :: Int,
+               syms :: [[Symbol]] }
 
---type RTLState = State (Int, Int)
---newtype RTLState = State { temp :: Int, label :: Int }
+type SM = State RTLState
+
+newLabel :: SM String 
+newLabel = do 
+  st <- get
+  let l = succ $ labelcount st
+  put (RTLState (tempcount st) l (syms st))
+  return $ show l
+
+newTemp :: SM Temp
+newTemp = do
+  st <- get
+  let t = succ $ tempcount st
+  put (RTLState t (labelcount st) (syms st))
+  return t
+
+addSym :: Symbol -> SM ()
+addSym sym = modify (\st -> RTLState (tempcount st)
+                                     (labelcount st)
+                                     (addSym' (syms st)))
+  where addSym' [] = [[sym]]
+        addSym' (ss'@(s':_):ss's) =
+          if (name sym == (name s')) then
+            (sym : ss') : ss's
+          else
+            ss' : addSym' ss's
 
 init :: RTLState
-init = RTLState 1 99
-
-newLabel :: RTLState -> (RTLState, String)
-newLabel st =
-  let l = succ $ label st
-  in (RTLState (temp st) l, "L" ++ show l)
-
-newTemp :: RTLState -> (RTLState, Int)
-newTemp st =
-  let t = succ $ temp st
-  in (RTLState t (label st), t)
-
-topLevel :: RTLState -> [AST.Topdec] -> [RTL.Dec]
-topLevel st [] = []
-topLevel st (AST.FUNDEC t id args decs body : tds) =
-  topLevel st tds
-topLevel st (AST.EXTERN t id args : tds) =
-  topLevel st tds
-topLevel st (AST.GLOBAL (AST.SCALARDEC t id) : tds) =
-  let (st', l) = newLabel st
-      dec = DATA l (case t of 
-                      CHAR -> sizeof BYTE
-                      INT -> sizeof LONG)
-  in dec : topLevel st' tds
-topLevel st (AST.GLOBAL (AST.ARRAYDEC t id (Just s)) : tds) =
-  let (st', l) = newLabel st
-      dec = DATA l (case t of
-                      CHAR -> s * sizeof BYTE
-                      INT -> s * sizeof LONG)
-  in dec : topLevel st' tds
-
+init = RTLState (Temp 1) 99 []
 
 parse :: AST.Program -> RTL.Program
 parse tree =
-  PROGRAM (topLevel init tree)
+  PROGRAM (evalState (mapM topLevel tree) init)
+
+topLevel :: AST.Topdec -> SM RTL.Dec
+topLevel (AST.FUNDEC t id args decs body) = do
+  l <- newLabel                        -- label
+  addSym (FUN id t)
+  fs <- mapM localDec args             -- formals
+  ls <- mapM localDec decs             -- locals
+  let fS = 0                           -- frameSize
+  st <- get -- hmm
+  is <- liftM join $ mapM funTime body -- insns
+  put st
+  return (PROC ("P" ++ l) fs ls 0 [])
+topLevel (AST.EXTERN t id args) = do
+  l <- newLabel
+  addSym (FUN id t)
+  return (PROC ("P" ++ l) [] [] 0 [])
+topLevel (AST.GLOBAL (AST.SCALARDEC t id)) = do
+  l <- newLabel
+  addSym (GLOB id t)
+  return (DATA ("V" ++ l) (case t of CHAR -> sizeof BYTE
+                                     INT -> sizeof LONG))
+topLevel (AST.GLOBAL (AST.ARRAYDEC t id (Just s))) = do -- hmm?
+  l <- newLabel
+  addSym (GLOB id t)
+  return (DATA ("V" ++ l) (case t of CHAR -> s * sizeof BYTE
+                                     INT -> s * sizeof LONG))
+
+localDec :: AST.Vardec -> SM Temp
+localDec (SCALARDEC ty id) = do
+  t <- newTemp
+  addSym (LOC id ty t)
+  return t
+localDec (ARRAYDEC ty id s) = do -- do what? What, what...
+  t <- newTemp
+  addSym (LOC id ty t)
+  return t
+
+funTime :: AST.Stmt -> SM [Insn]
+funTime (AST.EMPTY) = return []  -- nop!
+funTime (AST.EXPR e) = return []
+funTime (AST.IF e s1 Nothing) = return []
+funTime (AST.IF e s1 (Just s2)) = return []
+funTime (AST.WHILE e s1) = return []
+funTime (AST.RETURN Nothing) = return []
+funTime (AST.RETURN (Just e)) = return []
+funTime (AST.BLOCK stmts) = liftM join $ mapM funTime stmts
