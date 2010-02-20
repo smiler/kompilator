@@ -1,5 +1,5 @@
 module UCRtlAT (Program(..), Dec(..), Insn(..), Expr(..), Binop(..),
-       Unop(..), Relop(..), Temp, Label, Ty(..), rv, fp, sizeof) where
+       Unop(..), Relop(..), Temp(..), Label, Ty(..), rv, fp, sizeof) where
 
 import Prelude hiding (LT, EQ, GT)
 
@@ -10,13 +10,19 @@ instance Show Ty where
   show BYTE = "_b"
   show LONG = "_l"
 
-type Temp = Int	    -- pseudo register 
+newtype Temp = Temp Int	    -- pseudo register
+  deriving (Eq, Ord)
+instance Show Temp where
+  show (Temp t) = "#" ++ show t
+instance Enum Temp where
+  succ (Temp t) = Temp (succ t)
+
 type Label = String -- label
 
 rv :: Temp -- temp for return value 
-rv = 0
+rv = Temp 0
 fp :: Temp -- frame pointer temp, for storage of local arrays 
-fp = 1
+fp = Temp 1
 
 data Relop 
   = LT | LE | EQ | NE | GE | GT
