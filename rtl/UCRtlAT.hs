@@ -16,7 +16,8 @@ instance Show Temp where
   show (Temp t) = "#" ++ show t
 instance Enum Temp where
   succ (Temp t) = Temp (succ t)
-
+  fromEnum (Temp t) = t
+  toEnum i = Temp i
 type Label = String -- label
 
 rv :: Temp -- temp for return value 
