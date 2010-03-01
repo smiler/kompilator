@@ -146,25 +146,54 @@ localDec (AST.ARRAYDEC ty id (Just s)) = do -- do what? What, what...
   return (size)
 
 --funTime
-funTime :: Symbol -> AST.Stmt -> SM [Insn]
-funTime fun (AST.EMPTY) = return []  -- nop!
+funTime :: Symbol -> AST.Stmt -> SM ()
+funTime fun (AST.EMPTY) = return ()  -- nop!
 funTime fun (AST.RETURN Nothing) = do
   add [JUMP ("ret" ++ lab fun)]
-  return [JUMP ("ret" ++ lab fun)]
+--  return [JUMP ("ret" ++ lab fun)]
+  return ()
 funTime fun (AST.RETURN (Just e)) = do
   (t,_) <- exprTime e
   add [EVAL rv (TEMP t), JUMP ("ret" ++ lab fun)]
-  return [EVAL rv (TEMP t), JUMP ("ret" ++ lab fun)]
-funTime fun (AST.BLOCK stmts) = liftM join $ mapM (funTime fun) stmts
+--  return [EVAL rv (TEMP t), JUMP ("ret" ++ lab fun)]
+  return ()
+funTime fun (AST.BLOCK stmts) = do
+  mapM (funTime fun) stmts
+  return ()
 funTime fun (AST.WHILE e s1) = do
-  start' <- newLabel
+  check' <- newLabel
   end' <- newLabel
-  let start = "L" ++ start'
-  let end = "L" ++ end'  
-  return []
-funTime fun (AST.IF e s1 Nothing) = return []
-funTime fun (AST.IF e s1 (Just s2)) = return []
-funTime fun (AST.EXPR e) = return []
+  let check = "L" ++ check'
+  let end = "L" ++ end'
+  zero <- newTemp
+  add [EVAL zero (ICON 0),
+       LABDEF check]
+  (expr,_) <- exprTime e
+  add [CJUMP EQ expr zero end]
+  funTime fun s1
+  add [JUMP check,
+       LABDEF end]
+  return ()
+funTime fun (AST.IF e s1 s2) = do
+  end' <- newLabel
+  false' <- newLabel
+  let end = "L" ++ end'
+  let false = "L" ++ false'
+  zero <- newTemp
+  (expr,_) <- exprTime e
+  add [EVAL zero (ICON 0),
+       CJUMP EQ expr zero false]
+  funTime fun s1
+  add [JUMP end,
+       LABDEF false]
+  case s2 of
+    Nothing -> return ()
+    Just s -> funTime fun s
+  add [LABDEF end]
+  return ()
+funTime fun (AST.EXPR e) = do
+  exprTime e
+  return ()
 
 --exprTime
 exprTime :: AST.Expr -> SM (Temp, Ty)
