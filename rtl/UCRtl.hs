@@ -107,10 +107,10 @@ topLevel (AST.EXTERN t id args) = do
   let l = "P" ++ l'
   addSym (FUN id t l)
   lol <- (get >>= (\st -> return $ tempcount st))
---  fs' <- mapM localDec args             -- formals
-  localDec args 0
+  mapM arguments args             -- formals
+--  localDec args 0
   fs <- (get >>= (\st -> return $ tempcount st))
-  return (PROC l [lol..fs] [] 0 [])
+  return (PROC l (safetail [lol..fs]) [] 0 [])
 topLevel (AST.GLOBAL (AST.SCALARDEC t id)) = do
   l' <- newLabel
   let l = "V" ++ l'
@@ -144,6 +144,7 @@ localDec (AST.ARRAYDEC ty id (Just s)) = do -- do what? What, what...
   addSym (ARR id ty t)
   return (s * typeToSize ty)
 -}
+localDec :: [AST.Vardec] -> Int -> SM Int
 localDec [] fs = return fs
 localDec ((AST.SCALARDEC ty id) : l) fs = do
   t <- newTemp
@@ -264,36 +265,74 @@ exprTime (AST.UNARY op rhs) = do
   ret <- newTemp
   (Temp t, ty) <- exprTime rhs
   case op of
-    AST.NEG -> add [EVAL t0 (ICON 0),
-                    EVAL ret (BINARY SUB t0 (Temp t))]
-    AST.NOT -> add [EVAL ret (ICON (case t == 0 of True -> 0 ; otherwise -> 1))]
+    AST.NEG -> do (Temp t, ty) <- exprTime rhs
+                  add [EVAL t0 (ICON 0), EVAL ret (BINARY SUB t0 (Temp t))]
+                  return (ret, LONG)
+    AST.NOT -> exprTime (AST.BINARY AST.EQ (AST.CONST 0) rhs)
+--  return (ret, LONG)
+exprTime e @ (AST.BINARY op _ _) = do
+  ret <- case op of
+              AST.ADD -> binary e--add [EVAL ret (BINARY ADD (exprTime lhs) (exprTime rhs))]
+              AST.SUB -> binary e--add [EVAL ret (BINARY SUB (exprTime lhs) (exprTime rhs))]
+              AST.MUL -> binary e--add [EVAL ret (BINARY MUL (exprTime lhs) (exprTime rhs))]
+              AST.DIV -> binary e--add [EVAL ret (BINARY DIV (exprTime lhs) (exprTime rhs))]
+              AST.AND -> loland e
+              otherwise -> relation e
   return (ret, LONG)
-exprTime e @ (AST.BINARY op lhs rhs) =
-  return (Temp 0, LONG)
---  binary e
-exprTime (AST.FUNCALL id args) =
+exprTime (AST.FUNCALL id args) = do
+  st <- get
+  let (Just (f:_)) = find (\(s:_) -> name s == id) (syms st)
   return (Temp 0, LONG) --remember array
-{- 
+
+--binary 
 binary :: AST.Expr -> SM Temp
-binary AST.ADD = do
+binary (AST.BINARY op lhs' rhs') = do
+  ret <- newTemp
+  (lhs,_) <- exprTime lhs'
+  (rhs,_) <- exprTime rhs'
+  case op of
+    AST.ADD -> add [EVAL ret (BINARY ADD lhs rhs)]
+    AST.SUB -> add [EVAL ret (BINARY SUB lhs rhs)]
+    AST.MUL -> add [EVAL ret (BINARY MUL lhs rhs)]
+    AST.DIV -> add [EVAL ret (BINARY DIV lhs rhs)]
+  return ret
 
-binary AST.SUB = do
+--relation
+relation :: AST.Expr -> SM Temp
+relation (AST.BINARY op lhs' rhs') = do
+  ret <- newTemp
+  trueL <- newLabel >>= (\l -> return ('L' : l))
+  end <- newLabel >>= (\l -> return ('L' : l))
+  (lhs,_) <- exprTime lhs'
+  (rhs,_) <- exprTime rhs'
+  case op of
+    AST.LT -> add [CJUMP LT lhs rhs trueL]
+    AST.LE -> add [CJUMP LE lhs rhs trueL]
+    AST.EQ -> add [CJUMP EQ lhs rhs trueL]
+    AST.NE -> add [CJUMP NE lhs rhs trueL]
+    AST.GE -> add [CJUMP GE lhs rhs trueL]
+    AST.GT -> add [CJUMP GT lhs rhs trueL]
+  add [EVAL ret (ICON 0),
+       JUMP end,
+       LABDEF trueL,
+       EVAL ret (ICON 1),
+       LABDEF end]
+  return ret
 
-binary AST.MUL= do
-
-binary AST.DIV= do
-
-binary AST.LT = do
-
-binary AST.LE = do
-
-binary AST.EQ = do
-
-binary AST.NE = do
-
-binary AST.GE = do
-
-binary AST.GT = do
-
-binary AST.AND = do
-  -}
+loland :: AST.Expr -> SM Temp
+loland (AST.BINARY AST.AND lhs' rhs') = do
+  ret <- newTemp
+  zero <- newTemp
+  falseL <- newLabel >>= (\l -> return ('L' : l))
+  end <- newLabel >>= (\l -> return ('L' : l))
+  (lhs,_) <- exprTime lhs'
+  (rhs,_) <- exprTime rhs'
+  add [EVAL zero (ICON 0),
+       CJUMP EQ zero lhs falseL,
+       CJUMP EQ zero rhs falseL,
+       EVAL ret (ICON 1),
+       JUMP end,
+       LABDEF falseL,
+       EVAL ret (ICON 0),
+       LABDEF end]
+  return ret
