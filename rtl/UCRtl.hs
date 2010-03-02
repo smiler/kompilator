@@ -10,7 +10,7 @@ data Symbol
   = FUN  { name :: String, ty :: AST.Type, lab :: Label }
   | GLOB { name :: String, ty :: AST.Type, lab :: Label }
   | LOC  { name :: String, ty :: AST.Type, tmp :: Temp }
-  | ARR  { name :: String, ty :: AST.Type, length :: Int }
+  | ARR  { name :: String, ty :: AST.Type, addr :: Temp }
   | RARR  { name :: String, ty :: AST.Type, addr :: Temp }
   -- arrays?
 instance Eq Symbol where
@@ -94,7 +94,8 @@ topLevel (AST.FUNDEC t id args decs body) = do
   lol <- (get >>= (\st -> return $ tempcount st))
   mapM arguments args             -- formals
   fs <- (get >>= (\st -> return $ tempcount st))
-  frame <- liftM sum $ mapM localDec decs             -- locals
+--  frame <- liftM sum $ mapM localDec decs             -- locals
+  frame <- localDec decs 0
   mapM (funTime sym) body              -- insns
   ls <- (get >>= (\st -> return $ tempcount st))
 
@@ -106,7 +107,8 @@ topLevel (AST.EXTERN t id args) = do
   let l = "P" ++ l'
   addSym (FUN id t l)
   lol <- (get >>= (\st -> return $ tempcount st))
-  fs' <- mapM localDec args             -- formals
+--  fs' <- mapM localDec args             -- formals
+  localDec args 0
   fs <- (get >>= (\st -> return $ tempcount st))
   return (PROC l [lol..fs] [] 0 [])
 topLevel (AST.GLOBAL (AST.SCALARDEC t id)) = do
@@ -120,7 +122,7 @@ topLevel (AST.GLOBAL (AST.ARRAYDEC t id (Just s))) = do -- hmm?
   addSym (GLOB id t l)
   return (DATA l (s * typeToSize t))
 
---localDec
+--localArgs
 arguments :: AST.Vardec -> SM Temp
 arguments (AST.SCALARDEC ty id) = do
   t <- newTemp
@@ -130,20 +132,29 @@ arguments (AST.ARRAYDEC ty id _) = do -- do what? What, what...
   t <- newTemp
   addSym (RARR id ty t)
   return t
---arguments (AST.SCALARDEC ty id) = newTemp >>= (\t -> addsym (LOC id ty t))
---arguments (AST.ARRAYDEC ty id _) = newTemp >>= (\t -> addsym (RARR id ty t))
 
-
---localDec
+{--localDec
 localDec :: AST.Vardec -> SM Int
 localDec (AST.SCALARDEC ty id) = do
   t <- newTemp
   addSym (LOC id ty t)
   return 0
 localDec (AST.ARRAYDEC ty id (Just s)) = do -- do what? What, what...
-  let size = s * typeToSize ty
-  addSym (ARR id ty size)
-  return (size)
+  t <- newTemp
+  addSym (ARR id ty t)
+  return (s * typeToSize ty)
+-}
+localDec [] fs = return fs
+localDec ((AST.SCALARDEC ty id) : l) fs = do
+  t <- newTemp
+  addSym (LOC id ty t)
+  localDec l fs
+localDec ((AST.ARRAYDEC ty id (Just s)) : l) fs = do
+  t <- newTemp
+  addSym (ARR id ty t)
+  add [EVAL t (ICON fs)]
+  localDec l (fs + s * typeToSize ty)
+
 
 --funTime
 funTime :: Symbol -> AST.Stmt -> SM ()
@@ -154,7 +165,8 @@ funTime fun (AST.RETURN Nothing) = do
   return ()
 funTime fun (AST.RETURN (Just e)) = do
   (t,_) <- exprTime e
-  add [EVAL rv (TEMP t), JUMP ("ret" ++ lab fun)]
+  add [EVAL rv (TEMP t),
+       JUMP ("ret" ++ lab fun)]
 --  return [EVAL rv (TEMP t), JUMP ("ret" ++ lab fun)]
   return ()
 funTime fun (AST.BLOCK stmts) = do
@@ -218,7 +230,7 @@ exprTime (AST.ARRAY id ie) = do
   t2 <- newTemp
   t3 <- newTemp
   t4 <- newTemp
-  t5 <- newTemp
+--  t5 <- newTemp
   ret <- newTemp
   (i,_) <- exprTime ie
   case sym of
@@ -231,10 +243,15 @@ exprTime (AST.ARRAY id ie) = do
     ARR  {} -> add [EVAL t0 (ICON $ typeToSize $ ty sym),
                     EVAL t1 (TEMP i),
                     EVAL t2 (BINARY MUL t0 t1),
-                    EVAL t3 (ICON $ 3), -- ololol offset
-                    EVAL t4 (BINARY ADD t2 t3),
-                    EVAL t5 (BINARY ADD t4 fp),
-                    EVAL ret (UNARY (LOAD LONG) t5)]
+                    EVAL t3 (BINARY ADD t2 (addr sym)),
+                    EVAL t4 (BINARY ADD t3 fp),
+                    EVAL ret (UNARY (LOAD LONG) t4)]
+    RARR {} -> add [EVAL t0 (ICON $ typeToSize $ ty sym),
+                    EVAL t1 (TEMP i),
+                    EVAL t2 (BINARY MUL t0 t1),
+                    EVAL t3 (BINARY ADD t2 (addr sym)), -- ololol offset
+                    EVAL t4 (BINARY ADD t3 fp),
+                    EVAL ret (UNARY (LOAD LONG) t4)]
   return (ret, typeToTy $ ty sym)
 exprTime (AST.ASSIGN lhs rhs) = do
   st <- get
