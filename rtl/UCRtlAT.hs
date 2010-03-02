@@ -83,7 +83,7 @@ instance Show Insn where
   show (CJUMP op src1 src2 l) = "\t(if (" ++ show op ++ " " ++ 
                               show src1 ++ " " ++ show src2 ++
                               ") (goto " ++ show l ++ "))\n"
-  show (STORE ty dst src) = "\t(store " ++ show ty ++ " " ++ 
+  show (STORE ty dst src) = "\t(store" ++ show ty ++ " " ++ 
                           show dst ++ " " ++ show src ++ ")\n"
   show (EVAL dst expr) = "\t(set " ++ show dst ++ " " ++ show expr ++ ")\n"
   show (CALL (Just dst) l args) = "\t(set " ++ show dst ++ " (call " ++ show l ++
