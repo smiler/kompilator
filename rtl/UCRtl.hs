@@ -231,7 +231,6 @@ exprTime (AST.ARRAY id ie) = do
   t2 <- newTemp
   t3 <- newTemp
   t4 <- newTemp
---  t5 <- newTemp
   ret <- newTemp
   (i,_) <- exprTime ie
   case sym of
@@ -250,9 +249,9 @@ exprTime (AST.ARRAY id ie) = do
     RARR {} -> add [EVAL t0 (ICON $ typeToSize $ ty sym),
                     EVAL t1 (TEMP i),
                     EVAL t2 (BINARY MUL t0 t1),
-                    EVAL t3 (BINARY ADD t2 (addr sym)), -- ololol offset
-                    EVAL t4 (BINARY ADD t3 fp),
-                    EVAL ret (UNARY (LOAD LONG) t4)]
+                    EVAL t3 (BINARY ADD t2 (addr sym)),
+--                    EVAL t4 (BINARY ADD t3 fp),
+                    EVAL ret (UNARY (LOAD LONG) t3)]
   return (ret, typeToTy $ ty sym)
 exprTime (AST.ASSIGN lhs rhs) = do
   st <- get
@@ -269,20 +268,34 @@ exprTime (AST.UNARY op rhs) = do
                   add [EVAL t0 (ICON 0), EVAL ret (BINARY SUB t0 (Temp t))]
                   return (ret, LONG)
     AST.NOT -> exprTime (AST.BINARY AST.EQ (AST.CONST 0) rhs)
---  return (ret, LONG)
 exprTime e @ (AST.BINARY op _ _) = do
   ret <- case op of
-              AST.ADD -> binary e--add [EVAL ret (BINARY ADD (exprTime lhs) (exprTime rhs))]
-              AST.SUB -> binary e--add [EVAL ret (BINARY SUB (exprTime lhs) (exprTime rhs))]
-              AST.MUL -> binary e--add [EVAL ret (BINARY MUL (exprTime lhs) (exprTime rhs))]
-              AST.DIV -> binary e--add [EVAL ret (BINARY DIV (exprTime lhs) (exprTime rhs))]
+              AST.ADD -> binary e
+              AST.SUB -> binary e
+              AST.MUL -> binary e
+              AST.DIV -> binary e
               AST.AND -> loland e
               otherwise -> relation e
   return (ret, LONG)
 exprTime (AST.FUNCALL id args) = do
   st <- get
   let (Just (f:_)) = find (\(s:_) -> name s == id) (syms st)
-  return (Temp 0, LONG) --remember array
+  l <- mapM callarg args
+  add [CALL Nothing (lab f) l]
+  return (rv, LONG) --remember array
+
+callarg :: AST.Expr -> SM Temp
+callarg e @ (AST.VAR id) = do
+  st <- get
+  let (Just (sym:_)) = find (\(s:_) -> name s == id) (syms st)
+  case sym of
+            GLOB {} -> newTemp >>= (\ret -> add [EVAL ret (LABREF $ lab sym)] >> return ret)
+            RARR {} -> return $ addr sym
+            ARR  {} -> newTemp >>= (\ret -> add [EVAL ret (BINARY ADD (addr sym) fp)] >> return ret)
+            LOC  {} -> (exprTime e >>= (\(t,_) -> return t))
+callarg e = do
+  (t,_) <- exprTime e
+  return t
 
 --binary 
 binary :: AST.Expr -> SM Temp
