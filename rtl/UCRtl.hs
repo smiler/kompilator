@@ -5,6 +5,7 @@ import UCRtlAT as RTL
 import Control.Monad.State
 import Prelude hiding (LT, GT, EQ,length)
 import Data.List hiding (init,length)
+import Data.Maybe -- mapMaybe
 
 data Symbol
   = FUN  { name :: String, ty :: AST.Type, lab :: Label }
@@ -79,13 +80,15 @@ typeToTy AST.INT  = LONG
 
 parse :: AST.Program -> RTL.Program
 parse tree =
-  PROGRAM (evalState (mapM topLevel tree) initial)
+  PROGRAM (evalState (liftM catMaybes (mapM topLevel tree)) initial)
 
 safetail [] = []
 safetail l = tail l
 
+type MaybeDec = Maybe RTL.Dec
 --topLevel
-topLevel :: AST.Topdec -> SM RTL.Dec
+topLevel :: AST.Topdec -> SM (Maybe RTL.Dec)
+--topLevel :: AST.Topdec -> SM Maybe RTL.Dec
 topLevel (AST.FUNDEC t id args decs body) = do
   l' <- newLabel                       -- label
   let l = "P" ++ l'
@@ -100,27 +103,29 @@ topLevel (AST.FUNDEC t id args decs body) = do
   ls <- (get >>= (\st -> return $ tempcount st))
 
   is <- (get >>= (\st-> return ((rtl st) ++ [LABDEF ("ret" ++ l)])))
-  toss
-  return (PROC l (safetail [lol..fs]) (safetail [fs..ls]) frame is)
+  toss--away
+  return (Just (PROC l (safetail [lol..fs]) (safetail [fs..ls]) frame is))
 topLevel (AST.EXTERN t id args) = do
-  l' <- newLabel
-  let l = "P" ++ l'
-  addSym (FUN id t l)
-  lol <- (get >>= (\st -> return $ tempcount st))
-  mapM arguments args             -- formals
+--  l' <- newLabel
+--  let l = "P" ++ l'
+--  addSym (FUN id t l)
+  addSym (FUN id t id)
+--  lol <- (get >>= (\st -> return $ tempcount st))
+--  mapM arguments args             -- formals
 --  localDec args 0
-  fs <- (get >>= (\st -> return $ tempcount st))
-  return (PROC l (safetail [lol..fs]) [] 0 [])
+--  fs <- (get >>= (\st -> return $ tempcount st))
+--  return (PROC l (safetail [lol..fs]) [] 0 [])
+  return Nothing
 topLevel (AST.GLOBAL (AST.SCALARDEC t id)) = do
   l' <- newLabel
   let l = "V" ++ l'
   addSym (GLOB id t l)
-  return (DATA l (typeToSize t))
+  return (Just (DATA l (typeToSize t)))
 topLevel (AST.GLOBAL (AST.ARRAYDEC t id (Just s))) = do -- hmm?
   l' <- newLabel
   let l = "V" ++ l'
   addSym (GLOB id t l)
-  return (DATA l (s * typeToSize t))
+  return (Just (DATA l (s * typeToSize t)))
 
 --localArgs
 arguments :: AST.Vardec -> SM Temp
@@ -281,7 +286,7 @@ exprTime (AST.FUNCALL id args) = do
   st <- get
   let (Just (f:_)) = find (\(s:_) -> name s == id) (syms st)
   l <- mapM callarg args
-  add [CALL Nothing (lab f) l]
+  add [CALL Nothing (lab f) l] -- lol? probably best to ignore
   return (rv, LONG) --remember array
 
 callarg :: AST.Expr -> SM Temp
