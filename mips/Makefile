@@ -1,9 +1,9 @@
 CC	= ghc
 BINARY	= mips
 
-all: mips
+all: build
 
-mips: 
+build: 
 	$(CC) --make -o $(BINARY) -fno-warn-missing-fields Main.hs -i../parser -i../lexer -i../rtl
 
 clean: 
