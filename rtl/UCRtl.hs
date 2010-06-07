@@ -10,10 +10,10 @@ import Data.Maybe -- mapMaybe
 data Symbol
   = FUN  { name :: String, ty :: AST.Type, lab :: Label }
   | GLOB { name :: String, ty :: AST.Type, lab :: Label }
+  | GARR { name :: String, ty :: AST.Type, lab :: Label }
   | LOC  { name :: String, ty :: AST.Type, tmp :: Temp }
   | ARR  { name :: String, ty :: AST.Type, addr :: Temp }
   | RARR  { name :: String, ty :: AST.Type, addr :: Temp }
-  -- arrays?
 instance Eq Symbol where
   s == s' = (name s) == (name s')
   s /= s' = not (s == s')
@@ -21,8 +21,8 @@ instance Eq Symbol where
 data RTLState
   = RTLState { tempcount :: Temp,
                labelcount :: Int,
-               syms :: [[Symbol]]
-               , rtl :: [Insn]
+               syms :: [[Symbol]],
+               rtl :: [Insn]
              }
 
 type SM = State RTLState
@@ -55,16 +55,10 @@ addSym sym = do
 add :: [Insn] -> SM [Insn]
 add insns = do
   st <- get
---  let is = (revcons insns (rtl st))
   put (RTLState (tempcount st) (labelcount st) (syms st) (rtl st ++ insns))
   return insns
   where revcons [] l = l
         revcons (x:xs) l = revcons xs (x:l)
-
-toss :: SM ()
-toss = do
-  st <- get
-  put (RTLState (tempcount st) (labelcount st) (syms st) [])
 
 initial :: RTLState
 initial = RTLState (Temp 1) 99 [] []
@@ -88,33 +82,24 @@ safetail l = tail l
 type MaybeDec = Maybe RTL.Dec
 --topLevel
 topLevel :: AST.Topdec -> SM (Maybe RTL.Dec)
---topLevel :: AST.Topdec -> SM Maybe RTL.Dec
 topLevel (AST.FUNDEC t id args decs body) = do
-  l' <- newLabel                       -- label
-  let l = "P" ++ l'
-  sym <- addSym (FUN id t l)
-
-  lol <- (get >>= (\st -> return $ tempcount st))
+  sym <- addSym (FUN id t id)
+  st <- get
+  lol <- ( return $ tempcount st)
   mapM arguments args             -- formals
-  fs <- (get >>= (\st -> return $ tempcount st))
---  frame <- liftM sum $ mapM localDec decs             -- locals
+  fs <- (get >>= (return . tempcount))
   frame <- localDec decs 0
   mapM (funTime sym) body              -- insns
-  ls <- (get >>= (\st -> return $ tempcount st))
-
-  is <- (get >>= (\st-> return ((rtl st) ++ [LABDEF ("ret" ++ l)])))
-  toss--away
-  return (Just (PROC l (safetail [lol..fs]) (safetail [fs..ls]) frame is))
+  ls <- (get >>= (return . tempcount))
+  is <- (get >>= (\st-> return ((rtl st) ++ [LABDEF ("ret" ++ id)])))
+  put st -- restore old state (pop symbol table)
+  return (Just (PROC id
+                     (safetail [lol..fs])
+                     (safetail [fs..ls])
+                     (frame + (4 - frame `mod` 4))
+                     is))
 topLevel (AST.EXTERN t id args) = do
---  l' <- newLabel
---  let l = "P" ++ l'
---  addSym (FUN id t l)
   addSym (FUN id t id)
---  lol <- (get >>= (\st -> return $ tempcount st))
---  mapM arguments args             -- formals
---  localDec args 0
---  fs <- (get >>= (\st -> return $ tempcount st))
---  return (PROC l (safetail [lol..fs]) [] 0 [])
   return Nothing
 topLevel (AST.GLOBAL (AST.SCALARDEC t id)) = do
   l' <- newLabel
@@ -124,7 +109,7 @@ topLevel (AST.GLOBAL (AST.SCALARDEC t id)) = do
 topLevel (AST.GLOBAL (AST.ARRAYDEC t id (Just s))) = do -- hmm?
   l' <- newLabel
   let l = "V" ++ l'
-  addSym (GLOB id t l)
+  addSym (GARR id t l)
   return (Just (DATA l (s * typeToSize t)))
 
 --localArgs
@@ -138,17 +123,6 @@ arguments (AST.ARRAYDEC ty id _) = do -- do what? What, what...
   addSym (RARR id ty t)
   return t
 
-{--localDec
-localDec :: AST.Vardec -> SM Int
-localDec (AST.SCALARDEC ty id) = do
-  t <- newTemp
-  addSym (LOC id ty t)
-  return 0
-localDec (AST.ARRAYDEC ty id (Just s)) = do -- do what? What, what...
-  t <- newTemp
-  addSym (ARR id ty t)
-  return (s * typeToSize ty)
--}
 localDec :: [AST.Vardec] -> Int -> SM Int
 localDec [] fs = return fs
 localDec ((AST.SCALARDEC ty id) : l) fs = do
@@ -167,13 +141,11 @@ funTime :: Symbol -> AST.Stmt -> SM ()
 funTime fun (AST.EMPTY) = return ()  -- nop!
 funTime fun (AST.RETURN Nothing) = do
   add [JUMP ("ret" ++ lab fun)]
---  return [JUMP ("ret" ++ lab fun)]
   return ()
 funTime fun (AST.RETURN (Just e)) = do
-  (t,_) <- exprTime e
+  t <- exprTime e
   add [EVAL rv (TEMP t),
        JUMP ("ret" ++ lab fun)]
---  return [EVAL rv (TEMP t), JUMP ("ret" ++ lab fun)]
   return ()
 funTime fun (AST.BLOCK stmts) = do
   mapM (funTime fun) stmts
@@ -186,7 +158,7 @@ funTime fun (AST.WHILE e s1) = do
   zero <- newTemp
   add [EVAL zero (ICON 0),
        LABDEF check]
-  (expr,_) <- exprTime e
+  expr <- exprTime e
   add [CJUMP EQ expr zero end]
   funTime fun s1
   add [JUMP check,
@@ -198,7 +170,7 @@ funTime fun (AST.IF e s1 s2) = do
   let end = "L" ++ end'
   let false = "L" ++ false'
   zero <- newTemp
-  (expr,_) <- exprTime e
+  expr <- exprTime e
   add [EVAL zero (ICON 0),
        CJUMP EQ expr zero false]
   funTime fun s1
@@ -213,21 +185,59 @@ funTime fun (AST.EXPR e) = do
   exprTime e
   return ()
 
+lolTime (AST.VAR id) rhs = do
+  st <- get
+  let (Just (sym:_)) = find (\(s:_) -> name s == id) (syms st)
+  t0 <- newTemp
+  case sym of
+    GLOB {} -> add [EVAL t0 (LABREF $ lab sym),
+                    STORE (typeToTy $ ty sym) t0 rhs]
+    LOC  {} -> add [EVAL (tmp sym) (TEMP rhs)]
+  return rhs
+lolTime (AST.ARRAY id ie) rhs = do
+-- fuuuuuuuuuu
+  st <- get
+  let (Just (sym:_)) = find (\(s:_) -> name s == id) (syms st)
+  t0 <- newTemp
+  t1 <- newTemp
+  t2 <- newTemp
+  t4 <- newTemp
+  i <- exprTime ie
+  add [EVAL t0 (ICON $ typeToSize $ ty sym),
+       EVAL t1 (TEMP i),
+       EVAL t2 (BINARY MUL t0 t1)]
+  case sym of
+    GARR {} -> newTemp >>=
+                (\t3 -> add [EVAL t3 (LABREF $ lab sym),
+                             EVAL t4 (BINARY ADD t2 t3)])
+    ARR  {} -> newTemp >>=
+                (\t3 ->  add [EVAL t3 (BINARY ADD t2 (addr sym)),
+                              EVAL t4 (BINARY ADD t3 fp)])
+    RARR {} -> add [EVAL t4 (BINARY ADD t2 (addr sym))]
+  add [STORE (typeToTy $ ty sym) t4 rhs]
+  return rhs
+-- fuuuuuuuuuuuuu
+
 --exprTime
-exprTime :: AST.Expr -> SM (Temp, Ty)
+exprTime :: AST.Expr -> SM Temp
+exprTime (AST.ASSIGN lhs rhs) = do
+  st <- get
+  exprTime rhs >>= (lolTime lhs)
 exprTime (AST.CONST i) = do
-  ret <- newTemp
-  add [EVAL ret (ICON i)]
-  return (ret, LONG)
+  add [EVAL rv (ICON i)]
+  return rv
 exprTime (AST.VAR id) = do
   st <- get
   let (Just (sym:_)) = find (\(s:_) -> name s == id) (syms st)
-  let i = case sym of
-            GLOB {} -> LABREF $ lab sym
-            LOC  {} -> TEMP $ tmp sym
-  ret <- newTemp
-  add [EVAL ret i]
-  return (ret, typeToTy $ ty sym)
+  case sym of
+    GLOB {} -> newTemp >>=
+                (\t0 ->
+                   add [EVAL t0 (LABREF $ lab sym),
+                        EVAL rv (UNARY (LOAD $ typeToTy $ ty sym) t0)
+                       ]
+                )
+    LOC  {} -> add [EVAL rv (TEMP $ tmp sym)]
+  return rv
 exprTime (AST.ARRAY id ie) = do
   st <- get
   let (Just (sym:_)) = find (\(s:_) -> name s == id) (syms st)
@@ -235,94 +245,80 @@ exprTime (AST.ARRAY id ie) = do
   t1 <- newTemp
   t2 <- newTemp
   t3 <- newTemp
-  t4 <- newTemp
-  ret <- newTemp
-  (i,_) <- exprTime ie
+  i <- exprTime ie
+  add [EVAL t0 (ICON $ typeToSize $ ty sym),
+       EVAL t1 (TEMP i),
+       EVAL t2 (BINARY MUL t0 t1)]
   case sym of
-    GLOB {} -> add [EVAL t0 (ICON $ typeToSize $ ty sym),
-                    EVAL t1 (TEMP i),
-                    EVAL t2 (BINARY MUL t0 t1),
-                    EVAL t3 (LABREF $ lab sym),
-                    EVAL t4 (BINARY ADD t2 t3),
-                    EVAL ret (UNARY (LOAD LONG) t4)]
-    ARR  {} -> add [EVAL t0 (ICON $ typeToSize $ ty sym),
-                    EVAL t1 (TEMP i),
-                    EVAL t2 (BINARY MUL t0 t1),
-                    EVAL t3 (BINARY ADD t2 (addr sym)),
-                    EVAL t4 (BINARY ADD t3 fp),
-                    EVAL ret (UNARY (LOAD LONG) t4)]
-    RARR {} -> add [EVAL t0 (ICON $ typeToSize $ ty sym),
-                    EVAL t1 (TEMP i),
-                    EVAL t2 (BINARY MUL t0 t1),
-                    EVAL t3 (BINARY ADD t2 (addr sym)),
---                    EVAL t4 (BINARY ADD t3 fp),
-                    EVAL ret (UNARY (LOAD LONG) t3)]
-  return (ret, typeToTy $ ty sym)
-exprTime (AST.ASSIGN lhs rhs) = do
-  st <- get
-  (rhsVal,_) <- exprTime rhs
-  (lhsVal, ty) <- exprTime lhs
-  add [STORE ty lhsVal rhsVal]
-  return (rhsVal, ty)
+    GARR {} -> newTemp >>=
+                (\t4 -> add [EVAL t4 (LABREF $ lab sym),
+                             EVAL t3 (BINARY ADD t2 t4)])
+    ARR  {} -> newTemp >>=
+                (\t4 -> add [EVAL t4 (BINARY ADD t2 (addr sym)),
+                             EVAL t3 (BINARY ADD t4 fp)])
+    RARR {} -> add [EVAL t3 (BINARY ADD t2 (addr sym))]
+                    
+  add [EVAL rv (UNARY (LOAD (typeToTy $ ty sym)) t3)]
+  return rv
 exprTime (AST.UNARY op rhs) = do
   t0 <- newTemp
-  ret <- newTemp
-  (Temp t, ty) <- exprTime rhs
   case op of
-    AST.NEG -> do (Temp t, ty) <- exprTime rhs
-                  add [EVAL t0 (ICON 0), EVAL ret (BINARY SUB t0 (Temp t))]
-                  return (ret, LONG)
+    AST.NEG -> do t <- exprTime rhs
+                  add [EVAL t0 (ICON 0), EVAL rv (BINARY SUB t0 t)]
+                  return rv
     AST.NOT -> exprTime (AST.BINARY AST.EQ (AST.CONST 0) rhs)
 exprTime e @ (AST.BINARY op _ _) = do
   ret <- case op of
-              AST.ADD -> binary e
-              AST.SUB -> binary e
-              AST.MUL -> binary e
-              AST.DIV -> binary e
-              AST.AND -> loland e
-              otherwise -> relation e
-  return (ret, LONG)
+           AST.ADD -> binary e
+           AST.SUB -> binary e
+           AST.MUL -> binary e
+           AST.DIV -> binary e
+           AST.AND -> loland e
+           otherwise -> relation e
+  return ret
 exprTime (AST.FUNCALL id args) = do
   st <- get
   let (Just (f:_)) = find (\(s:_) -> name s == id) (syms st)
   l <- mapM callarg args
   add [CALL Nothing (lab f) l] -- lol? probably best to ignore
-  return (rv, LONG) --remember array
+  return rv
 
 callarg :: AST.Expr -> SM Temp
 callarg e @ (AST.VAR id) = do
   st <- get
+  ret <- newTemp
   let (Just (sym:_)) = find (\(s:_) -> name s == id) (syms st)
   case sym of
-            GLOB {} -> newTemp >>= (\ret -> add [EVAL ret (LABREF $ lab sym)] >> return ret)
-            RARR {} -> return $ addr sym
-            ARR  {} -> newTemp >>= (\ret -> add [EVAL ret (BINARY ADD (addr sym) fp)] >> return ret)
-            LOC  {} -> (exprTime e >>= (\(t,_) -> return t))
+    GLOB {} -> newTemp >>= 
+                 (\t0 -> add [EVAL t0 (LABREF $ lab sym),
+                              EVAL ret (UNARY (LOAD $ typeToTy $ ty sym) t0)] >>
+                           return ret)
+    GARR {} -> add [EVAL ret (LABREF $ lab sym)] >> return ret
+    RARR {} -> return $ addr sym
+    ARR  {} -> add [EVAL ret (BINARY ADD (addr sym) fp)] >> return ret
+    LOC  {} -> exprTime e
 callarg e = do
-  (t,_) <- exprTime e
-  return t
+  exprTime e
 
 --binary 
 binary :: AST.Expr -> SM Temp
 binary (AST.BINARY op lhs' rhs') = do
-  ret <- newTemp
-  (lhs,_) <- exprTime lhs'
-  (rhs,_) <- exprTime rhs'
+  lhs <- exprTime lhs'
+  rhs <- exprTime rhs'
   case op of
-    AST.ADD -> add [EVAL ret (BINARY ADD lhs rhs)]
-    AST.SUB -> add [EVAL ret (BINARY SUB lhs rhs)]
-    AST.MUL -> add [EVAL ret (BINARY MUL lhs rhs)]
-    AST.DIV -> add [EVAL ret (BINARY DIV lhs rhs)]
-  return ret
+    AST.ADD -> add [EVAL rv (BINARY ADD lhs rhs)]
+    AST.SUB -> add [EVAL rv (BINARY SUB lhs rhs)]
+    AST.MUL -> add [EVAL rv (BINARY MUL lhs rhs)]
+    AST.DIV -> add [EVAL rv (BINARY DIV lhs rhs)]
+  return rv
 
 --relation
 relation :: AST.Expr -> SM Temp
 relation (AST.BINARY op lhs' rhs') = do
-  ret <- newTemp
   trueL <- newLabel >>= (\l -> return ('L' : l))
   end <- newLabel >>= (\l -> return ('L' : l))
-  (lhs,_) <- exprTime lhs'
-  (rhs,_) <- exprTime rhs'
+  lhs <- exprTime lhs'
+  rhs <- exprTime rhs'
   case op of
     AST.LT -> add [CJUMP LT lhs rhs trueL]
     AST.LE -> add [CJUMP LE lhs rhs trueL]
@@ -330,27 +326,26 @@ relation (AST.BINARY op lhs' rhs') = do
     AST.NE -> add [CJUMP NE lhs rhs trueL]
     AST.GE -> add [CJUMP GE lhs rhs trueL]
     AST.GT -> add [CJUMP GT lhs rhs trueL]
-  add [EVAL ret (ICON 0),
+  add [EVAL rv (ICON 0),
        JUMP end,
        LABDEF trueL,
-       EVAL ret (ICON 1),
+       EVAL rv (ICON 1),
        LABDEF end]
-  return ret
+  return rv
 
 loland :: AST.Expr -> SM Temp
 loland (AST.BINARY AST.AND lhs' rhs') = do
-  ret <- newTemp
   zero <- newTemp
   falseL <- newLabel >>= (\l -> return ('L' : l))
   end <- newLabel >>= (\l -> return ('L' : l))
-  (lhs,_) <- exprTime lhs'
-  (rhs,_) <- exprTime rhs'
+  lhs <- exprTime lhs'
+  rhs <- exprTime rhs'
   add [EVAL zero (ICON 0),
        CJUMP EQ zero lhs falseL,
        CJUMP EQ zero rhs falseL,
-       EVAL ret (ICON 1),
+       EVAL rv (ICON 1),
        JUMP end,
        LABDEF falseL,
-       EVAL ret (ICON 0),
+       EVAL rv (ICON 0),
        LABDEF end]
-  return ret
+  return rv
