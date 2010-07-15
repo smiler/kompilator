@@ -81,8 +81,6 @@ push s (ss'@(s':_):ss's) =
   else
     ss' : push s ss's
 
---lol (l:ls) = 
-
 topLevel :: [AST.Topdec] -> Table -> Table
 topLevel [] st = st
 topLevel (d:ds) st =
@@ -91,7 +89,7 @@ topLevel (d:ds) st =
           AST.FUNDEC t id args decs body
             -> let s = add (FUN id (BASE t) (funArgs args)) st
                    l = funTimes id body (funDecs decs (funDecs args s))
-               in if (l == l) then s else s -- force evaluation of l
+               in if (l == []) then st else s -- force evaluation of l
           AST.EXTERN t id args
             -> add (FUN id (BASE t) (funArgs args)) st
           AST.GLOBAL (AST.SCALARDEC t id)
@@ -204,6 +202,5 @@ argCheck id n arg narg st =
   in (t1 == t2) || (error $ "wrong type of argument #" ++ show n ++ " to function " ++ id)
 
 ucSemantic :: [AST.Topdec] -> [AST.Topdec]
-ucSemantic p = do
-  topLevel p []
-  p
+ucSemantic p =
+  (return $ topLevel p []) >> p

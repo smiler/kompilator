@@ -92,7 +92,9 @@ topLevel (AST.FUNDEC t id args decs body) = do
   mapM (funTime sym) body              -- insns
   ls <- (get >>= (return . tempcount))
   is <- (get >>= (\st-> return ((rtl st) ++ [LABDEF ("ret" ++ id)])))
-  put st -- restore old state (pop symbol table)
+  newst <- get
+  put st { tempcount = tempcount newst -- restore old state (pop symbol table)
+         , labelcount = labelcount newst }
   return (Just (PROC id
                      (safetail [lol..fs])
                      (safetail [fs..ls])
@@ -281,10 +283,11 @@ exprTime e @ (AST.BINARY op _ _) = do
   return ret
 exprTime (AST.FUNCALL id args) = do
   st <- get
+  ret <- newTemp
   let (Just (f:_)) = find (\(s:_) -> name s == id) (syms st)
   l <- mapM callarg args
-  add [CALL Nothing (lab f) l] -- lol? probably best to ignore
-  return rv
+  add [CALL (Just ret) (lab f) l] -- lol? probably best to ignore
+  return ret
 
 callarg :: AST.Expr -> SM Temp
 callarg e @ (AST.VAR id) = do

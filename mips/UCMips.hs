@@ -1,3 +1,4 @@
+-- DO: fixa till stacken - hantera argument, pekare, temps osv
 module UCMips where
 
 import UCRtlAT as RTL
@@ -27,6 +28,7 @@ loldata dec =
 lolcode :: RTL.Dec -> [String]
 lolcode p =
   (label p ++ ":") :
+  (show $ splitAt 4 (formals p)) :
   "\tsw\t$ra, -4($sp)" :
   ("\taddi\t$sp, $sp, -" ++ show (frameSize p + (3 + (length $ locals p)) * 4)) :
   ("\taddi\t$t0, $sp, " ++ show ((3 + (length $ locals p)) * 4)) :
@@ -36,6 +38,10 @@ lolcode p =
    "\tlw\t$ra, -4($sp)",
    "\tjr\t$ra"
   ]
+
+fromRegs :: [RTL.Temp] -> Int -> [String]
+fromRegs (f:_) n = []
+--  ["\tsw\t$a" ++ show n ++ ", 
 
 cminus a b | a - b < 0 = 0
            | otherwise = a - b
