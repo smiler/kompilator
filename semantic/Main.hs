@@ -1,7 +1,9 @@
 module Main where
 
 import UCSemantic
+import UCParser
 
 main = do
-  syms <- ucSemantic
+  parseTree <- ucParser
+  syms <- ucSemantic parseTree
   putStrLn $ concatMap (\x -> show x ++ "\n") syms

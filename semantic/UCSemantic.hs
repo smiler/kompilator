@@ -1,6 +1,5 @@
 module UCSemantic (Symbol(..), ucSemantic) where
 
-import qualified UCParser as Parser
 import qualified UCParserAST as AST
 
 data Type
@@ -204,6 +203,6 @@ argCheck id n arg narg st =
             otherwise -> exprCheck arg st
   in (t1 == t2) || (error $ "wrong type of argument #" ++ show n ++ " to function " ++ id)
 	
-ucSemantic = do
-  s <- Parser.ucParser
-  return (topLevel s [])
+ucSemantic p = do
+  return (topLevel p [])
+
