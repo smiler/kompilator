@@ -96,7 +96,7 @@ topLevel (AST.FUNDEC t id args decs body) = do
   return (Just (PROC id
                      (safetail [lol..fs])
                      (safetail [fs..ls])
-                     (frame + (4 - frame `mod` 4))
+                     (((frame - 1) `div` 4 + 1) * 4)
                      is))
 topLevel (AST.EXTERN t id args) = do
   addSym (FUN id t id)
@@ -224,20 +224,22 @@ exprTime (AST.ASSIGN lhs rhs) = do
   st <- get
   exprTime rhs >>= (lolTime lhs)
 exprTime (AST.CONST i) = do
-  add [EVAL rv (ICON i)]
-  return rv
+  ret <- newTemp
+  add [EVAL ret (ICON i)]
+  return ret
 exprTime (AST.VAR id) = do
   st <- get
+  ret <- newTemp
   let (Just (sym:_)) = find (\(s:_) -> name s == id) (syms st)
   case sym of
     GLOB {} -> newTemp >>=
                 (\t0 ->
                    add [EVAL t0 (LABREF $ lab sym),
-                        EVAL rv (UNARY (LOAD $ typeToTy $ ty sym) t0)
+                        EVAL ret (UNARY (LOAD $ typeToTy $ ty sym) t0)
                        ]
                 )
-    LOC  {} -> add [EVAL rv (TEMP $ tmp sym)]
-  return rv
+    LOC  {} -> add [EVAL ret (TEMP $ tmp sym)]
+  return ret
 exprTime (AST.ARRAY id ie) = do
   st <- get
   let (Just (sym:_)) = find (\(s:_) -> name s == id) (syms st)
@@ -245,6 +247,7 @@ exprTime (AST.ARRAY id ie) = do
   t1 <- newTemp
   t2 <- newTemp
   t3 <- newTemp
+  ret <- newTemp
   i <- exprTime ie
   add [EVAL t0 (ICON $ typeToSize $ ty sym),
        EVAL t1 (TEMP i),
@@ -258,8 +261,8 @@ exprTime (AST.ARRAY id ie) = do
                              EVAL t3 (BINARY ADD t4 fp)])
     RARR {} -> add [EVAL t3 (BINARY ADD t2 (addr sym))]
                     
-  add [EVAL rv (UNARY (LOAD (typeToTy $ ty sym)) t3)]
-  return rv
+  add [EVAL ret (UNARY (LOAD (typeToTy $ ty sym)) t3)]
+  return ret
 exprTime (AST.UNARY op rhs) = do
   t0 <- newTemp
   case op of
@@ -305,12 +308,13 @@ binary :: AST.Expr -> SM Temp
 binary (AST.BINARY op lhs' rhs') = do
   lhs <- exprTime lhs'
   rhs <- exprTime rhs'
+  ret <- newTemp
   case op of
-    AST.ADD -> add [EVAL rv (BINARY ADD lhs rhs)]
-    AST.SUB -> add [EVAL rv (BINARY SUB lhs rhs)]
-    AST.MUL -> add [EVAL rv (BINARY MUL lhs rhs)]
-    AST.DIV -> add [EVAL rv (BINARY DIV lhs rhs)]
-  return rv
+    AST.ADD -> add [EVAL ret (BINARY ADD lhs rhs)]
+    AST.SUB -> add [EVAL ret (BINARY SUB lhs rhs)]
+    AST.MUL -> add [EVAL ret (BINARY MUL lhs rhs)]
+    AST.DIV -> add [EVAL ret (BINARY DIV lhs rhs)]
+  return ret
 
 --relation
 relation :: AST.Expr -> SM Temp
@@ -319,6 +323,7 @@ relation (AST.BINARY op lhs' rhs') = do
   end <- newLabel >>= (\l -> return ('L' : l))
   lhs <- exprTime lhs'
   rhs <- exprTime rhs'
+  ret <- newTemp
   case op of
     AST.LT -> add [CJUMP LT lhs rhs trueL]
     AST.LE -> add [CJUMP LE lhs rhs trueL]
@@ -326,12 +331,12 @@ relation (AST.BINARY op lhs' rhs') = do
     AST.NE -> add [CJUMP NE lhs rhs trueL]
     AST.GE -> add [CJUMP GE lhs rhs trueL]
     AST.GT -> add [CJUMP GT lhs rhs trueL]
-  add [EVAL rv (ICON 0),
+  add [EVAL ret (ICON 0),
        JUMP end,
        LABDEF trueL,
-       EVAL rv (ICON 1),
+       EVAL ret (ICON 1),
        LABDEF end]
-  return rv
+  return ret
 
 loland :: AST.Expr -> SM Temp
 loland (AST.BINARY AST.AND lhs' rhs') = do
@@ -340,12 +345,13 @@ loland (AST.BINARY AST.AND lhs' rhs') = do
   end <- newLabel >>= (\l -> return ('L' : l))
   lhs <- exprTime lhs'
   rhs <- exprTime rhs'
+  ret <- newTemp
   add [EVAL zero (ICON 0),
        CJUMP EQ zero lhs falseL,
        CJUMP EQ zero rhs falseL,
-       EVAL rv (ICON 1),
+       EVAL ret (ICON 1),
        JUMP end,
        LABDEF falseL,
-       EVAL rv (ICON 0),
+       EVAL ret (ICON 0),
        LABDEF end]
-  return rv
+  return ret

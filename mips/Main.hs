@@ -3,9 +3,10 @@ module Main where
 import UCRtl
 import UCRtlAT
 import UCParser
+import UCSemantic
 import UCMips
 
-main = do
-  tree <- ucParser
-  let PROGRAM rtl = parse tree
-  mapM_ putStrLn $ funcode rtl
+main =
+  getContents >>= ((mapM_ putStrLn) . funcode . fromPrg . parse . ucSemantic . ucParser)
+  where
+   fromPrg (PROGRAM rtl) = rtl

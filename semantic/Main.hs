@@ -4,6 +4,6 @@ import UCSemantic
 import UCParser
 
 main = do
-  parseTree <- ucParser
-  syms <- ucSemantic parseTree
-  putStrLn $ concatMap (\x -> show x ++ "\n") syms
+--  getContents >>= ucParser >>= ucSemantic >>= (putStrLn . concatMap (\x -> show x ++ "\n"))
+  getContents >>= (putStrLn . concatMap (\x -> show x ++ "\n") . ucSemantic . ucParser)
+  putStrLn "OK."

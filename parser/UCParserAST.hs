@@ -16,6 +16,7 @@ type MaybeInt = Maybe Int
 data Vardec
   = SCALARDEC Type String
   | ARRAYDEC  Type String MaybeInt
+  deriving (Eq)
 instance Show Vardec where
   show (SCALARDEC t s) = show t ++ " " ++ show s
   show (ARRAYDEC t s Nothing) = show t ++ "[]" ++ " " ++ show s
@@ -25,6 +26,7 @@ data Binop
   = ADD | SUB | MUL | DIV
   | LT | LE | EQ | NE | GE | GT
   | AND
+  deriving (Eq)
 instance Show Binop where
   show ADD = "+"
   show SUB = "-"
@@ -40,6 +42,7 @@ instance Show Binop where
 
 data Unop
   = NEG | NOT
+  deriving (Eq)
 instance Show Unop where
   show NEG = "-"
   show NOT = "!"
@@ -52,7 +55,7 @@ data Expr
   | UNARY   Unop Expr
   | BINARY  Binop Expr Expr
   | FUNCALL String [Expr]
-  deriving Show
+  deriving (Show,Eq)
 {-
 instance Show Expr where
   show CONST i = show i
@@ -72,13 +75,13 @@ data Stmt
   | WHILE  Expr Stmt
   | RETURN MaybeExpr
   | BLOCK  [Stmt]
-  deriving Show
+  deriving (Show,Eq)
 
 data Topdec
   = FUNDEC Type String [Vardec] [Vardec] [Stmt]
   | EXTERN Type String [Vardec]
   | GLOBAL Vardec
-  deriving Show
+  deriving (Show, Eq)
 
 type Program
   = [Topdec]

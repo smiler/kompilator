@@ -194,6 +194,5 @@ run input
           Left msg -> error $ show msg
           Right a -> a
 
-ucParser =  do
-  s <- getContents
-  return (run s)
+ucParser s =
+ run s

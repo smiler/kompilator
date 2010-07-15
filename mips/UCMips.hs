@@ -40,6 +40,7 @@ lolcode p =
 cminus a b | a - b < 0 = 0
            | otherwise = a - b
 
+-- handle instructions
 lolins :: RTL.Insn -> [String]
 lolins (RTL.LABDEF l) = [l ++ ":"]
 lolins (RTL.JUMP l) = ["\tj\t" ++ l]
@@ -61,14 +62,6 @@ lolins (RTL.STORE ty (RTL.Temp dst) (RTL.Temp src)) =
      LONG -> "\tsw\t$t1, 0($t0)"
      BYTE -> "\tsb\t$t1, 0($t0)"
   ]
-{-
-  ["\tlw\t$t0, " ++ show (dst * 4) ++ "($sp)",
-   "\tlw\t$t1, " ++ show (src * 4) ++ "($sp)",
-   "\tmul\t$t0, $t0, 4",
-   "\tadd\t$t0, $t0, $sp",
-   "\tsw\t$t1, 0($t0)"
-  ]
--}
 lolins (RTL.EVAL (RTL.Temp t) e) =
   lolexpr e ++
   ["\tsw\t$v0, " ++ show (t * 4) ++ "($sp)"]
@@ -82,6 +75,7 @@ lolins (RTL.CALL dst l args) = -- TODO ololol
      Nothing -> []
      Just (RTL.Temp t) -> ["\tsw\t$v0, " ++ show (t * 4) ++ "($sp)"]
 
+-- put arguments in registers
 regargs :: [RTL.Temp] -> [String]
 regargs tl = 
   let

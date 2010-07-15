@@ -3,8 +3,9 @@ module Main where
 import UCRtl
 import UCRtlAT
 import UCParser
+import UCSemantic
 
-main = do
-  tree <- ucParser
-  let PROGRAM rtl = parse tree
-  putStrLn $ concatMap show rtl
+fromPrg (PROGRAM rtl) = rtl
+
+main =
+  getContents >>= (putStrLn . (concatMap show) . fromPrg . parse . ucSemantic . ucParser)  

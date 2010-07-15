@@ -3,5 +3,4 @@ module Main where
 import UCParser
 
 main = do
-  s <- ucParser
-  putStrLn $ concatMap (\s -> show s ++ "\n") s
+  getContents >>= (\s -> putStrLn $ concatMap (\s -> show s ++ "\n") (ucParser s))

@@ -202,7 +202,8 @@ argCheck id n arg narg st =
             AST.VAR vid -> getType vid st
             otherwise -> exprCheck arg st
   in (t1 == t2) || (error $ "wrong type of argument #" ++ show n ++ " to function " ++ id)
-	
-ucSemantic p = do
-  return (topLevel p [])
 
+ucSemantic :: [AST.Topdec] -> [AST.Topdec]
+ucSemantic p = do
+  topLevel p []
+  p
