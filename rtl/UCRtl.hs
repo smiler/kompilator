@@ -83,7 +83,11 @@ type MaybeDec = Maybe RTL.Dec
 --topLevel
 topLevel :: AST.Topdec -> SM (Maybe RTL.Dec)
 topLevel (AST.FUNDEC t id args decs body) = do
-  sym <- addSym (FUN id t id)
+  lab' <- newLabel
+  let funlab = (case id of
+                        "main" -> "main"
+                        otherwise -> 'P' : lab')
+  sym <- addSym (FUN id t funlab)
   st <- get
   lol <- ( return $ tempcount st)
   mapM arguments args             -- formals
@@ -91,11 +95,11 @@ topLevel (AST.FUNDEC t id args decs body) = do
   frame <- localDec decs 0
   mapM (funTime sym) body              -- insns
   ls <- (get >>= (return . tempcount))
-  is <- (get >>= (\st-> return ((rtl st) ++ [LABDEF ("ret" ++ id)])))
+  is <- (get >>= (\st-> return ((rtl st) ++ [LABDEF ("ret" ++ funlab)])))
   newst <- get
-  put st { tempcount = tempcount newst -- restore old state (pop symbol table)
-         , labelcount = labelcount newst }
-  return (Just (PROC id
+  put st {  -- restore old state (pop symbol table)
+          labelcount = labelcount newst }
+  return (Just (PROC funlab
                      (safetail [lol..fs])
                      (safetail [fs..ls])
                      (((frame - 1) `div` 4 + 1) * 4)
@@ -146,7 +150,8 @@ funTime fun (AST.RETURN Nothing) = do
   return ()
 funTime fun (AST.RETURN (Just e)) = do
   t <- exprTime e
-  add [EVAL rv (TEMP t),
+  ret <- newTemp
+  add [EVAL ret (TEMP t),
        JUMP ("ret" ++ lab fun)]
   return ()
 funTime fun (AST.BLOCK stmts) = do
@@ -266,11 +271,13 @@ exprTime (AST.ARRAY id ie) = do
   add [EVAL ret (UNARY (LOAD (typeToTy $ ty sym)) t3)]
   return ret
 exprTime (AST.UNARY op rhs) = do
-  t0 <- newTemp
   case op of
-    AST.NEG -> do t <- exprTime rhs
-                  add [EVAL t0 (ICON 0), EVAL rv (BINARY SUB t0 t)]
-                  return rv
+    AST.NEG -> do
+                  ret <- newTemp
+                  t0 <- newTemp
+                  t <- exprTime rhs
+                  add [EVAL t0 (ICON 0), EVAL ret (BINARY SUB t0 t)]
+                  return ret
     AST.NOT -> exprTime (AST.BINARY AST.EQ (AST.CONST 0) rhs)
 exprTime e @ (AST.BINARY op _ _) = do
   ret <- case op of
@@ -286,7 +293,9 @@ exprTime (AST.FUNCALL id args) = do
   ret <- newTemp
   let (Just (f:_)) = find (\(s:_) -> name s == id) (syms st)
   l <- mapM callarg args
-  add [CALL (Just ret) (lab f) l] -- lol? probably best to ignore
+  case ty f of
+    AST.VOID -> add [CALL Nothing (lab f) l]
+    otherwise -> add [CALL (Just ret) (lab f) l]
   return ret
 
 callarg :: AST.Expr -> SM Temp

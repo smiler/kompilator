@@ -28,11 +28,9 @@ type Table = [[Symbol']]
 
 symName (FUN id _ _) = id
 symName (VAR id _) = id
---symName (ARRAY id _) = id
 
 symType (FUN _ t _) = t
 symType (VAR _ t) = t
---symType (ARRAY _ t) = t
 
 getSym :: String -> Table -> Symbol
 getSym id [] = error $ "undefined: " ++ id
@@ -89,7 +87,7 @@ topLevel (d:ds) st =
           AST.FUNDEC t id args decs body
             -> let s = add (FUN id (BASE t) (funArgs args)) st
                    l = funTimes id body (funDecs decs (funDecs args s))
-               in if (l == []) then st else s -- force evaluation of l
+               in if (l == l) then s else s -- force evaluation of l
           AST.EXTERN t id args
             -> add (FUN id (BASE t) (funArgs args)) st
           AST.GLOBAL (AST.SCALARDEC t id)
@@ -113,7 +111,6 @@ funDecs (d:ds) st =
     AST.ARRAYDEC t id _ -> funDecs ds (push (VAR id (ARRAY t)) st)
 
 funTimes :: String -> [AST.Stmt] -> Table -> Table
---funTimes id [] st = error $ show st
 funTimes id [] st = st
 funTimes id (s:ss) st =
   seq (stmtCheck s id st) (funTimes id ss st)
@@ -144,8 +141,6 @@ stmtCheck s id st =
 
 check :: Bool -> a -> String -> a
 check e f m = if e then f else error m
-
---testId FUN id t st =
 
 exprCheck :: AST.Expr -> Table -> Type
 exprCheck (AST.CONST i) st =
@@ -203,4 +198,5 @@ argCheck id n arg narg st =
 
 ucSemantic :: [AST.Topdec] -> [AST.Topdec]
 ucSemantic p =
-  (return $ topLevel p []) >> p
+  let lol = topLevel p []
+  in if (lol == lol) then p else p -- force evaluation of topLevel
